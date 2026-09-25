@@ -191,6 +191,10 @@ impl ComponentSlider {
 		self.set_value(common, ValueIndex::Primary, new_value);
 	}
 
+	pub fn is_dragging(&self) -> bool {
+		self.state.borrow().dragged_by.is_some()
+	}
+
 	pub fn on_value_changed(&self, func: SliderValueChangedCallback) {
 		self.state.borrow_mut().on_value_changed = Some(func);
 	}

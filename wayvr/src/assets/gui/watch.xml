@@ -63,11 +63,11 @@
     </Button>
   </template>
   <template name="App">
-    <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">  
+    <Button macro="button_style" id="overlay_${idx}" tooltip_str="${name}" _press="::OverlayToggle ${name}">
       <sprite width="38" height="38" src_ext="${icon}" />
     </Button>
   </template>
-    
+
   <template name="Set">
     <Button macro="button_style" id="set_${idx}" _press="::SetToggle ${idx}" tooltip="WATCH.SWITCH_TO_SET" tooltip_side="top">
       <sprite width="38" height="38" src_builtin="@/watch/set2.svg" />
@@ -106,7 +106,7 @@
 
   <elements>
     <!-- padding="32" is required there (to make room for tooltips) -->
-    <div
+    <div id="watch_root"
       padding="32" interactable="0"
       flex_direction="column" gap="8">
       <!-- Top elements (device battery levels) -->
@@ -145,6 +145,35 @@
                 <sprite width="40" height="40" src="@/watch/fix-floor.svg" />
               </Button>
             </div>
+          </div>
+        </rectangle>
+
+        <!-- MPRIS media controls (hidden when no player is running) -->
+        <rectangle id="mpris_root" macro="decorative_rect" flex_direction="column" gap="6">
+          <div flex_direction="row" gap="10" align_items="center">
+            <image id="mpris_art" width="64" height="64" round="6" src="@/watch/media-note.svg" />
+            <div flex_direction="column" gap="2" flex_grow="1" flex_shrink="1">
+              <label id="mpris_title" text="Title" size="18" weight="bold" color="on_background" />
+              <label id="mpris_artist" text="Artist" size="14" color="on_background_variant" />
+            </div>
+            <div flex_direction="row" gap="6" align_items="center">
+              <Button id="mpris_prev" macro="button_style">
+                <sprite width="32" height="32" src="@/watch/media-prev.svg" />
+              </Button>
+              <Button id="mpris_play" macro="button_style">
+                <sprite id="mpris_play_icon" width="32" height="32" src="@/watch/media-play.svg" />
+              </Button>
+              <Button id="mpris_next" macro="button_style">
+                <sprite width="32" height="32" src="@/watch/media-next.svg" />
+              </Button>
+            </div>
+          </div>
+          <div flex_direction="row" gap="8" align_items="center">
+            <label id="mpris_position" text="0:00" size="14" color="on_background_variant" />
+            <div flex_grow="1">
+              <Slider id="mpris_progress" width="100%" height="20" min_value="0" max_value="1" step="0.001" value="0" show_value="0" />
+            </div>
+            <label id="mpris_duration" text="0:00" size="14" color="on_background_variant" />
           </div>
         </rectangle>
 
