@@ -1,6 +1,7 @@
 pub mod dbus;
 pub mod hid;
 pub mod input;
+pub mod mpris;
 pub mod notifications;
 
 #[cfg(feature = "whisper")]
