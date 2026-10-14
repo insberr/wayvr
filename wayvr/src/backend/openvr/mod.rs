@@ -385,7 +385,7 @@ pub fn openvr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
         }
 
         log::trace!("Rendering overlays");
-        futures.wait()?;
+        futures.wait(&app.gfx)?;
 
         overlays.values_mut().for_each(|o| {
             if !(dashboard_hidden || o.data.always_visible) {

@@ -199,10 +199,8 @@ impl GpuFutures {
         self.command_buffers.extend(results);
     }
 
-    pub fn wait(self) -> anyhow::Result<()> {
-        for command_buffer in self.command_buffers {
-            command_buffer.submit_and_wait()?;
-        }
-        Ok(())
+    pub fn wait(self, gfx: &WGfx) -> anyhow::Result<()> {
+        // HACK(fix-gpu-lag): one CPU wait per frame instead of one per command buffer
+        gfx.submit_all_and_wait(&self.command_buffers)
     }
 }

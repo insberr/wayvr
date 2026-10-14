@@ -121,6 +121,14 @@ pub struct WGfx {
 	surface_format: Format,
 	texture_filter: Filter,
 	samplers: Mutex<HashMap<SamplerCreateInfo, Weak<Sampler>>>,
+	pending: Mutex<Vec<PendingSubmit>>,
+}
+
+/// fire-and-forget submission, kept alive until the GPU is done with it
+struct PendingSubmit {
+	fence: raw::RawFence,
+	_command_buffer: raw::RawCommandBuffer,
+	_keepalive: Vec<Box<dyn std::any::Any + Send + Sync>>,
 }
 
 impl WGfx {
@@ -192,6 +200,7 @@ impl WGfx {
 			surface_format,
 			texture_filter,
 			samplers: Mutex::new(HashMap::new()),
+			pending: Mutex::new(Vec::new()),
 		})
 	}
 
@@ -263,7 +272,39 @@ impl WGfx {
 			.raw
 			.create_command_buffer(QueueType::Graphics, CommandBufferUsage::OneTimeSubmit)?;
 		cmd.transition_image(&image.raw, new_layout);
-		cmd.submit_and_wait()
+		// HACK(fix-gpu-lag): later work on the graphics queue is ordered after this
+		// by queue order, so don't stall the CPU waiting for it.
+		self.submit_async(cmd, vec![Box::new(image.clone())])
+	}
+
+	/// Submit without waiting for completion. Only valid for graphics-queue work,
+	/// since cross-queue ordering relies on the CPU wait.
+	fn submit_async(
+		&self,
+		mut cmd: raw::RawCommandBuffer,
+		keepalive: Vec<Box<dyn std::any::Any + Send + Sync>>,
+	) -> anyhow::Result<()> {
+		if !cmd.is_graphics_queue() {
+			return cmd.submit_and_wait();
+		}
+		let fence = cmd.submit()?;
+		let mut pending = self.pending.lock();
+		pending.retain(|p| !p.fence.is_complete());
+		pending.push(PendingSubmit {
+			fence,
+			_command_buffer: cmd,
+			_keepalive: keepalive,
+		});
+		Ok(())
+	}
+
+	/// Submit all command buffers in order, then wait once for all of them.
+	pub fn submit_all_and_wait(&self, command_buffers: &[Arc<BuiltCommandBuffer>]) -> anyhow::Result<()> {
+		let mut fences = Vec::with_capacity(command_buffers.len());
+		for command_buffer in command_buffers {
+			fences.push(command_buffer.raw.lock().submit()?);
+		}
+		raw::RawFence::wait_all(&fences)
 	}
 
 	fn create_swapchain_inner(

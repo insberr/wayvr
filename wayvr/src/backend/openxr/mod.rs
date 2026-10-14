@@ -464,7 +464,7 @@ pub fn openxr_run(args: &Args, params: RunParams) -> Result<(), BackendError> {
         }
 
         lines.render(&app, &mut futures)?;
-        futures.wait()?;
+        futures.wait(&app.gfx)?;
         // End rendering
 
         if let Some(monado_state) = &mut app.monado_state {

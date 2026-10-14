@@ -1677,7 +1677,7 @@ impl Context {
 			return Err(anyhow!("vkBeginCommandBuffer failed: {e:?}"));
 		}
 
-		Ok(RawCommandBuffer {
+		let mut command_buffer = RawCommandBuffer {
 			context: self.clone(),
 			queue,
 			pool,
@@ -1685,7 +1685,11 @@ impl Context {
 			ended: false,
 			active_rendering: None,
 			external_images: BTreeMap::new(),
-		})
+		};
+		// HACK(fix-gpu-lag): order every command buffer after all earlier work on
+		// its queue, so submissions don't need a CPU round-trip to be ordered.
+		command_buffer.record_queue_completion_barrier();
+		Ok(command_buffer)
 	}
 }
 
@@ -2616,23 +2620,64 @@ impl RawCommandBuffer {
 	}
 
 	pub(super) fn submit_and_wait(&mut self) -> anyhow::Result<()> {
+		self.submit()?.wait()
+	}
+
+	/// Submit without waiting. The command buffer must be kept alive until the returned fence signals.
+	pub(super) fn submit(&mut self) -> anyhow::Result<RawFence> {
 		self.finish()?;
 		let buffers = [self.handle];
 		let submits = [vk::SubmitInfo::default().command_buffers(&buffers)];
 		let fence_info = vk::FenceCreateInfo::default();
 		let fence = unsafe { self.context.device.create_fence(&fence_info, None) }
 			.map_err(|e| anyhow!("vkCreateFence failed: {e:?}"))?;
-		let submit_result = unsafe { self.context.device.queue_submit(self.queue.handle, &submits, fence) }
-			.map_err(|e| anyhow!("vkQueueSubmit failed: {e:?}"));
-		let wait_result = if submit_result.is_ok() {
-			unsafe { self.context.device.wait_for_fences(&[fence], true, u64::MAX) }
-				.map_err(|e| anyhow!("vkWaitForFences failed: {e:?}"))
-		} else {
-			Ok(())
+		if let Err(e) = unsafe { self.context.device.queue_submit(self.queue.handle, &submits, fence) } {
+			unsafe { self.context.device.destroy_fence(fence, None) };
+			bail!("vkQueueSubmit failed: {e:?}");
+		}
+		Ok(RawFence {
+			context: self.context.clone(),
+			fence,
+		})
+	}
+
+	pub(super) fn is_graphics_queue(&self) -> bool {
+		self.queue.handle == self.context.queue_gfx.handle
+	}
+}
+
+pub(super) struct RawFence {
+	context: Arc<Context>,
+	fence: vk::Fence,
+}
+
+impl RawFence {
+	pub(super) fn is_complete(&self) -> bool {
+		// treat errors (e.g. device lost) as complete so resources get released
+		unsafe { self.context.device.get_fence_status(self.fence) }.unwrap_or(true)
+	}
+
+	pub(super) fn wait(&self) -> anyhow::Result<()> {
+		unsafe { self.context.device.wait_for_fences(&[self.fence], true, u64::MAX) }
+			.map_err(|e| anyhow!("vkWaitForFences failed: {e:?}"))
+	}
+
+	pub(super) fn wait_all(fences: &[Self]) -> anyhow::Result<()> {
+		let Some(first) = fences.first() else {
+			return Ok(());
 		};
-		unsafe { self.context.device.destroy_fence(fence, None) };
-		submit_result?;
-		wait_result
+		let handles = fences.iter().map(|f| f.fence).collect::<Vec<_>>();
+		unsafe { first.context.device.wait_for_fences(&handles, true, u64::MAX) }
+			.map_err(|e| anyhow!("vkWaitForFences failed: {e:?}"))
+	}
+}
+
+impl Drop for RawFence {
+	fn drop(&mut self) {
+		unsafe {
+			let _ = self.context.device.wait_for_fences(&[self.fence], true, u64::MAX);
+			self.context.device.destroy_fence(self.fence, None);
+		}
 	}
 }
 

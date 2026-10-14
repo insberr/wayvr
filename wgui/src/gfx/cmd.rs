@@ -57,8 +57,9 @@ impl<T> CommandBufferBuilder<T> {
 		}))
 	}
 
-	pub fn build_and_execute(mut self) -> anyhow::Result<()> {
-		self.raw.submit_and_wait()
+	pub fn build_and_execute(self) -> anyhow::Result<()> {
+		// HACK(fix-gpu-lag): graphics-queue work doesn't block, see WGfx::submit_async
+		self.graphics.clone().submit_async(self.raw, self.keepalive)
 	}
 
 	pub fn build_and_execute_now(self) -> anyhow::Result<()> {
